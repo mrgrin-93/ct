@@ -1,0 +1,107 @@
+#!/opt/ct/venv/bin/python3
+
+import os
+from pprint import pprint
+import pexpect, argparse
+from nornir import InitNornir
+from nornir.core.filter import F
+from nornir.core.task import Task, Result
+from nornir.core.exceptions import NornirSubTaskError
+from nornir_scrapli.tasks import cfg_get_config, get_prompt
+from git import Repo
+from datetime import datetime
+from getpass import getuser
+import sys
+
+def interactive(device):
+    command = f"ssh -oPubkeyAuthentication=no -oStrictHostKeyChecking=no {device['username']}@{device['host']}"
+    try:
+        ssh = pexpect.spawn(command)
+        print(f"connecting {device['username']}@{device['host']}" )
+        try:
+            ssh.expect('[Pp]assword', timeout = 10)
+
+            ssh.sendline(device['password'])
+            try:
+                ssh.expect(r'[>#]', timeout=5)
+            except pexpect.exceptions.TIMEOUT as e:
+                print(f"{device['host']} - wrong password\n")
+                print(ssh.before)
+                raise SystemExit
+            ssh.sendline('enable')
+            try:
+                ssh.expect('[Pp]assword', timeout=1)
+                ssh.sendline(device['secret'])
+                ssh.interact()
+            except:
+                ssh.interact()
+        except pexpect.exceptions.TIMEOUT as e:
+            print(f"{device['host']} - timeout\n")
+            print(ssh.before)
+            sys.exit(1)
+    except pexpect.exceptions.EOF as e:
+        print(f"{device['host']} - no access\n")
+        print(ssh.before)
+        sys.exit(1)
+
+def get_host_conf(task: Task):
+    try:
+        result = task.run(task=cfg_get_config)
+        hn = task.run(task=get_prompt)
+        with open(f'/usr/local/Cisco/confs/{hn.result.strip("#")}', "w") as file:
+#        with open(f'/opt/ct/{hn.result.strip("#")}', "w") as file:
+           file.write(result.scrapli_response.result)
+    except NornirSubTaskError:
+        pass
+    PATH_OF_GIT_REPO = '/usr/local/Cisco/confs/.git'
+    user = getuser()
+    date = datetime.now()
+    repo = Repo(PATH_OF_GIT_REPO)
+    repo.git.add(all=True)
+    repo.index.commit(f'{date} {user}')
+
+parser = argparse.ArgumentParser()
+parser.add_argument(dest="host", default=None, help='hostname')
+parser.add_argument("-L", dest="int", action='store_true', help="open interactive session with ssh", required=False)
+parser.add_argument("-l", dest="loc", action='store_true', help='locac user of cisco device')
+parser.add_argument("-t1", dest="t1", action='store_true', help="connect with tunnell 1 ip", required=False)
+parser.add_argument("-t2", dest="t2", action='store_true', help="connect with tunnell 2 ip", required=False)
+parser.add_argument("-e1", dest="e1", action='store_true', help="connect with external ip 1", required=False)
+parser.add_argument("-e2", dest="e2", action='store_true', help="connect with external ip 2", required=False)
+parser.add_argument("-R", dest="sh_run", action='store_true', help="save sh run in /usr/local/Cicso/confs", required=False)
+#parser.add_argument("-C", dest="comm", help="send command to dev", required=False)
+args = parser.parse_args()
+
+
+nr = InitNornir(config_file="/opt/ct/config.yaml", 
+#                core={"raise_on_error": True}
+                logging={"enabled": False, "log_file": "/opt/ct/nornir.log"}
+                )
+
+host_name = args.host
+hosts = nr.filter(name=host_name.lower())
+
+
+if args.int:
+    host = {"host": hosts.inventory.hosts[host_name.lower()].hostname,
+        "username": hosts.inventory.hosts[host_name.lower()].username,
+        "password": hosts.inventory.hosts[host_name.lower()].password,
+        "secret": hosts.inventory.hosts[host_name.lower()]['secret']}
+
+    if args.t1:
+        host['host'] = hosts.inventory.hosts[host_name.lower()]['hoost_t1']
+    if args.t2:
+        host['host'] = hosts.inventory.hosts[host_name.lower()]['hoost_t2']
+    if args.e1:
+        host['host'] = hosts.inventory.hosts[host_name.lower()]['hoost_e']
+    if args.e2:
+        host['host'] = hosts.inventory.hosts[host_name.lower()]['hoost_e2']
+
+    interactive(host)
+
+    command = f"/opt/ct/venv/bin/python3 /opt/ct/scripts/get_config.py -H {hosts.inventory.hosts[host_name.lower()].name} &"
+    os.system(command)
+
+if args.sh_run:
+    hosts.run(task=get_host_conf)
+

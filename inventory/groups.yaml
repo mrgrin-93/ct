@@ -1,0 +1,19 @@
+office:
+  username: cisco
+  password: cisco
+  platform: ios
+  data:
+    secret: "cisco"
+    site : 'default'
+    role: 'access'
+  connection_options:
+    scrapli:
+      extras:
+        auth_secondary: "cisco"
+        ssh_config_file: True
+        auth_strict_key: False
+    napalm:
+      extras:
+        optional_args:
+          secret: cisco
+          global_delay_factor: 5
