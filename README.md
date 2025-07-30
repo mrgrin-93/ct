@@ -38,9 +38,9 @@
 
 ## Использование
 
-    ```bash
-    /opt/ct/venv/bin/python3 ct <hostname> [опции]
-    ```
+  ```bash
+  /opt/ct/venv/bin/python3 ct <hostname> [опции]
+  ```
   ### Основные аргументы
 - <hostname> — имя устройства (из инвентаря Nornir).
 - -L — открыть интерактивную SSH-сессию.
